@@ -15,6 +15,6 @@
 source 'https://rubygems.org'
 
 gem "webrick"
-gem "rack", "~> 2.0"
+gem "rack", "~> 2.2", ">= 2.2.18"
 
 gem "mustermann", "~> 1.1"
