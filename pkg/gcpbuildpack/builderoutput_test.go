@@ -334,6 +334,37 @@ func TestSaveBuilderSuccessOutput(t *testing.T) {
 			},
 		},
 		{
+			name: "existing file with fetch",
+			initial: &builderoutput.BuilderOutput{
+				Fetch: &builderoutput.FetchOutput{
+					Status:             "SUCCESS",
+					SourceType:         "ZipArchive",
+					Location:           "gs://my-bucket/src.zip#123",
+					TotalDurationMs:    680,
+					DownloadDurationMs: 460,
+					UnzipDurationMs:    220,
+					DownloadBytes:      1048576,
+				},
+			},
+			want: builderoutput.BuilderOutput{
+				Fetch: &builderoutput.FetchOutput{
+					Status:             "SUCCESS",
+					SourceType:         "ZipArchive",
+					Location:           "gs://my-bucket/src.zip#123",
+					TotalDurationMs:    680,
+					DownloadDurationMs: 460,
+					UnzipDurationMs:    220,
+					DownloadBytes:      1048576,
+				},
+				Metrics:  buildermetrics.NewBuilderMetrics(),
+				Metadata: buildermetadata.NewBuilderMetadata(),
+				Stats: []builderoutput.BuilderStat{
+					{BuildpackID: buildpackID, BuildpackVersion: buildpackVersion, DurationMs: dur.Milliseconds(), UserDurationMs: userDur.Milliseconds()},
+				},
+				CustomImage: false,
+			},
+		},
+		{
 			name:        "propagates Metadata",
 			addMetadata: true,
 			want: builderoutput.BuilderOutput{

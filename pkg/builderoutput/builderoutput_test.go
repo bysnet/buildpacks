@@ -157,30 +157,121 @@ func TestJSON(t *testing.T) {
 	}
 }
 
+func TestFromJSONWithFetch(t *testing.T) {
+	serialized := `
+{
+	"fetch": {
+		"status": "SUCCESS",
+		"sourceType": "ZipArchive",
+		"location": "gs://test-bucket/src.zip#123",
+		"totalDurationMs": 680,
+		"downloadDurationMs": 460,
+		"unzipDurationMs": 220,
+		"downloadBytes": 1048576,
+		"filesCount": 42
+	},
+	"rtVersions": ["24.0.0"],
+	"stats": [
+		{
+			"buildpackId": "google.nodejs.npm",
+			"buildpackVersion": "0.9.0",
+			"totalDurationMs": 5000,
+			"userDurationMs": 4500
+		}
+	]
+}
+`
+	got, err := FromJSON([]byte(serialized))
+	if err != nil {
+		t.Fatalf("FromJSON failed: %v", err)
+	}
+
+	want := BuilderOutput{
+		Fetch: &FetchOutput{
+			Status:             "SUCCESS",
+			SourceType:         "ZipArchive",
+			Location:           "gs://test-bucket/src.zip#123",
+			TotalDurationMs:    680,
+			DownloadDurationMs: 460,
+			UnzipDurationMs:    220,
+			DownloadBytes:      1048576,
+			FilesCount:         42,
+		},
+		InstalledRuntimeVersions: []string{"24.0.0"},
+		Stats: []BuilderStat{
+			{
+				BuildpackID:      "google.nodejs.npm",
+				BuildpackVersion: "0.9.0",
+				DurationMs:       5000,
+				UserDurationMs:   4500,
+			},
+		},
+	}
+
+	if diff := cmp.Diff(got, want, cmp.AllowUnexported(buildermetrics.BuilderMetrics{}, buildermetrics.Counter{}, buildermetrics.FloatDP{}, buildererror.Error{}, buildermetadata.BuilderMetadata{})); diff != "" {
+		t.Errorf("FromJSON with fetch diff (-got +want):\n%v", diff)
+	}
+}
+
+func TestJSONWithFetch(t *testing.T) {
+	b := BuilderOutput{
+		Fetch: &FetchOutput{
+			Status:          "SUCCESS",
+			SourceType:      "ZipArchive",
+			Location:        "gs://test-bucket/src.zip#123",
+			TotalDurationMs: 680,
+		},
+	}
+
+	s, err := b.JSON()
+	if err != nil {
+		t.Fatalf("Failed to marshal %v: %v", b, err)
+	}
+	if want := `"fetch":{"status":"SUCCESS","sourceType":"ZipArchive","location":"gs://test-bucket/src.zip#123","totalDurationMs":680,"downloadDurationMs":0,"unzipDurationMs":0,"downloadBytes":0,"filesCount":0}`; !strings.Contains(string(s), want) {
+		t.Errorf("Expected fetch block not found in %s", s)
+	}
+}
+
 func TestIsSystemError(t *testing.T) {
 	testCases := []struct {
-		name      string
-		errorType buildererror.Status
-		want      bool
+		name string
+		bo   BuilderOutput
+		want bool
 	}{
 		{
-			name:      "no match",
-			errorType: buildererror.StatusInvalidArgument,
-			want:      false,
+			name: "no match buildpack error",
+			bo:   BuilderOutput{Error: buildererror.Error{Type: buildererror.StatusInvalidArgument}},
+			want: false,
 		},
 		{
-			name:      "exact",
-			errorType: buildererror.StatusInternal,
-			want:      true,
+			name: "exact buildpack error",
+			bo:   BuilderOutput{Error: buildererror.Error{Type: buildererror.StatusInternal}},
+			want: true,
+		},
+		{
+			name: "fetch user error",
+			bo: BuilderOutput{
+				Fetch: &FetchOutput{
+					Error: &buildererror.Error{Type: buildererror.StatusPermissionDenied},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "fetch internal system error",
+			bo: BuilderOutput{
+				Fetch: &FetchOutput{
+					Error: &buildererror.Error{Type: buildererror.StatusInternal},
+				},
+			},
+			want: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			bo := BuilderOutput{Error: buildererror.Error{Type: tc.errorType}}
-
-			if got, want := bo.IsSystemError(), tc.want; got != want {
-				t.Errorf("incorrect result for %q got=%t want=%t", tc.errorType, got, want)
+			if got, want := tc.bo.IsSystemError(), tc.want; got != want {
+				t.Errorf("incorrect result for %q got=%t want=%t", tc.name, got, want)
 			}
 		})
 	}

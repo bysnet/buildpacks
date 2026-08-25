@@ -44,6 +44,7 @@ func (bo BuilderOutput) JSON() ([]byte, error) {
 
 // BuilderOutput contains data about the outcome of a build
 type BuilderOutput struct {
+	Fetch                    *FetchOutput                    `json:"fetch,omitempty"`
 	InstalledRuntimeVersions []string                        `json:"rtVersions,omitempty"`
 	Metrics                  buildermetrics.BuilderMetrics   `json:"metrics"`
 	Error                    buildererror.Error              `json:"error"`
@@ -51,6 +52,19 @@ type BuilderOutput struct {
 	Stats                    []BuilderStat                   `json:"stats"`
 	Warnings                 []string                        `json:"warnings"`
 	CustomImage              bool                            `json:"customImage"`
+}
+
+// FetchOutput captures detailed metrics and status of the source fetch step.
+type FetchOutput struct {
+	Status             string              `json:"status"`
+	SourceType         string              `json:"sourceType"`
+	Location           string              `json:"location"`
+	TotalDurationMs    int64               `json:"totalDurationMs"`
+	DownloadDurationMs int64               `json:"downloadDurationMs"`
+	UnzipDurationMs    int64               `json:"unzipDurationMs"`
+	DownloadBytes      int64               `json:"downloadBytes"`
+	FilesCount         int                 `json:"filesCount"`
+	Error              *buildererror.Error `json:"error,omitempty"`
 }
 
 // New constructs a BuilderOutput and returns a pointer.
@@ -63,6 +77,9 @@ func New() *BuilderOutput {
 
 // IsSystemError determines if the error type is a SYSTEM-attributed error
 func (bo BuilderOutput) IsSystemError() bool {
+	if bo.Fetch != nil && bo.Fetch.Error != nil && bo.Fetch.Error.Type == buildererror.StatusInternal {
+		return true
+	}
 	return bo.Error.Type == buildererror.StatusInternal
 }
 
