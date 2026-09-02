@@ -792,13 +792,13 @@ func (mi MakerInstaller) InstallTarballIfNotCached(ctx *gcp.Context, runtime Ins
 func isZstdSupportedRuntime(runtimeEnv string) bool {
 	supported := []string{
 		// Node.js
-		"nodejs20", "nodejs22", "nodejs24",
+		"nodejs20", "nodejs22", "nodejs24", "nodejs26",
 		// Python
-		"python310", "python311", "python312", "python313", "python314",
+		"python310", "python311", "python312", "python313", "python314", "python315",
 		// Ruby
-		"ruby32", "ruby33", "ruby34", "ruby40",
+		"ruby32", "ruby33", "ruby34", "ruby40", "ruby41",
 		// PHP
-		"php82", "php83", "php84", "php85",
+		"php82", "php83", "php84", "php85", "php86",
 		// Java
 		"java17", "java21", "java25",
 		// Dotnet

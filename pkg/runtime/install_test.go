@@ -1274,6 +1274,11 @@ func TestIsZstdSupportedRuntime(t *testing.T) {
 			want:       true,
 		},
 		{
+			name:       "nodejs26 is supported",
+			runtimeEnv: "nodejs26",
+			want:       true,
+		},
+		{
 			name:       "nodejs18 is not supported",
 			runtimeEnv: "nodejs18",
 			want:       false,
@@ -1284,8 +1289,88 @@ func TestIsZstdSupportedRuntime(t *testing.T) {
 			want:       false,
 		},
 		{
-			name:       "python is not supported",
+			name:       "python310 is supported",
+			runtimeEnv: "python310",
+			want:       true,
+		},
+		{
+			name:       "python314 is supported",
+			runtimeEnv: "python314",
+			want:       true,
+		},
+		{
+			name:       "python315 is supported",
+			runtimeEnv: "python315",
+			want:       true,
+		},
+		{
+			name:       "python38 is not supported",
 			runtimeEnv: "python38",
+			want:       false,
+		},
+		{
+			name:       "ruby32 is supported",
+			runtimeEnv: "ruby32",
+			want:       true,
+		},
+		{
+			name:       "ruby40 is supported",
+			runtimeEnv: "ruby40",
+			want:       true,
+		},
+		{
+			name:       "ruby41 is supported",
+			runtimeEnv: "ruby41",
+			want:       true,
+		},
+		{
+			name:       "php82 is supported",
+			runtimeEnv: "php82",
+			want:       true,
+		},
+		{
+			name:       "php85 is supported",
+			runtimeEnv: "php85",
+			want:       true,
+		},
+		{
+			name:       "php86 is supported",
+			runtimeEnv: "php86",
+			want:       true,
+		},
+		{
+			name:       "java17 is supported",
+			runtimeEnv: "java17",
+			want:       true,
+		},
+		{
+			name:       "java21 is supported",
+			runtimeEnv: "java21",
+			want:       true,
+		},
+		{
+			name:       "java25 is supported",
+			runtimeEnv: "java25",
+			want:       true,
+		},
+		{
+			name:       "dotnet8 is supported",
+			runtimeEnv: "dotnet8",
+			want:       true,
+		},
+		{
+			name:       "dotnet10 is supported",
+			runtimeEnv: "dotnet10",
+			want:       true,
+		},
+		{
+			name:       "go is not supported",
+			runtimeEnv: "go126",
+			want:       false,
+		},
+		{
+			name:       "static24 is not supported",
+			runtimeEnv: "static24",
 			want:       false,
 		},
 		{
