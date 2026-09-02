@@ -78,6 +78,28 @@ func TestInstallPNPM(t *testing.T) {
 			},
 		},
 		{
+			name:     "valid_pnpm12_version_constraint",
+			wantFile: "bin/pnpm",
+			npmResponse: `{
+				"name": "pnpm",
+				"dist-tags": {
+					"latest": "11.24.0"
+				},
+				"versions": {
+					"12.0.0": {
+						"name": "npm",
+						"version": "12.0.0"
+					}
+				},
+				"modified": "2026-08-26T15:12:00.000Z"
+			}`,
+			packageJSON: PackageJSON{
+				Engines: packageEnginesJSON{
+					PNPM: "12.x.x",
+				},
+			},
+		},
+		{
 			name: "invalid_version",
 			npmResponse: `{
 				"name": "pnpm",
@@ -225,6 +247,32 @@ func TestDetectPNPMVersion(t *testing.T) {
 			stackID:   "ubuntu2204",
 			wantError: true,
 		},
+		{
+			name: "engines_range_resolves_to_pnpm12",
+			packageJSON: PackageJSON{
+				Engines: packageEnginesJSON{
+					PNPM: ">=11",
+				},
+			},
+			npmResponse: `{
+				"name": "pnpm",
+				"dist-tags": {
+					"latest": "11.24.0"
+				},
+				"versions": {
+					"11.24.0": {
+						"name": "pnpm",
+						"version": "11.24.0"
+					},
+					"12.0.0": {
+						"name": "pnpm",
+						"version": "12.0.0"
+					}
+				}
+			}`,
+			stackID:     "ubuntu2204",
+			wantVersion: "12.0.0",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -303,23 +351,161 @@ func TestInstallPNPMV11(t *testing.T) {
 	if _, err := os.Stat(fp); err != nil {
 		t.Errorf("os.Stat(%q) got error: %v, want nil", fp, err)
 	}
+
+	content, err := os.ReadFile(fp)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) got error: %v", fp, err)
+	}
+	if !strings.Contains(string(content), "dist/pnpm.mjs") {
+		t.Errorf("expected wrapper script in %s, got: %s", fp, string(content))
+	}
+}
+
+func TestInstallPNPMV11MissingWrapperTarget(t *testing.T) {
+	npmResponse := `{
+		"name": "pnpm",
+		"dist-tags": {
+			"latest": "11.0.0"
+		},
+		"versions": {
+			"11.0.0": {
+				"name": "pnpm",
+				"version": "11.0.0"
+			}
+		}
+	}`
+
+	testserver.New(
+		t,
+		testserver.WithHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.String(), ".tar.gz") {
+				w.WriteHeader(http.StatusOK)
+				w.Write(mockTarballWithFiles(t, map[string]string{
+					"pnpm": "pnpm!",
+				}))
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+			}
+		})),
+		testserver.WithMockURL(&pnpmDownloadURL),
+	)
+
+	testserver.New(
+		t,
+		testserver.WithJSON(npmResponse),
+		testserver.WithMockURL(&npmRegistryURL),
+	)
+
+	layer := &libcnb.Layer{
+		Name:     "pnpm_test",
+		Path:     t.TempDir(),
+		Metadata: map[string]any{},
+	}
+
+	pkgJSON := &PackageJSON{
+		Engines: packageEnginesJSON{
+			PNPM: "11.0.0",
+		},
+	}
+
+	err := InstallPNPM(gcpbuildpack.NewContext(), layer, pkgJSON)
+	if err == nil {
+		t.Fatalf("InstallPNPM should have failed when dist/pnpm.mjs is missing for v11")
+	}
+}
+
+func TestInstallPNPMV12(t *testing.T) {
+	npmResponse := `{
+		"name": "pnpm",
+		"dist-tags": {
+			"latest": "11.24.0"
+		},
+		"versions": {
+			"12.0.0": {
+				"name": "pnpm",
+				"version": "12.0.0"
+			}
+		}
+	}`
+
+	testserver.New(
+		t,
+		testserver.WithHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.String(), ".tar.gz") {
+				w.WriteHeader(http.StatusOK)
+				// pnpm v12 tarball does not contain dist/pnpm.mjs
+				w.Write(mockTarballWithFiles(t, map[string]string{
+					"pnpm": "pnpm!",
+				}))
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+			}
+		})),
+		testserver.WithMockURL(&pnpmDownloadURL),
+	)
+
+	testserver.New(
+		t,
+		testserver.WithJSON(npmResponse),
+		testserver.WithMockURL(&npmRegistryURL),
+	)
+
+	layer := &libcnb.Layer{
+		Name:     "pnpm_test",
+		Path:     t.TempDir(),
+		Metadata: map[string]any{},
+	}
+
+	pkgJSON := &PackageJSON{
+		Engines: packageEnginesJSON{
+			PNPM: "12.0.0",
+		},
+	}
+
+	err := InstallPNPM(gcpbuildpack.NewContext(), layer, pkgJSON)
+	if err != nil {
+		t.Fatalf("InstallPNPM(ctx, %v, %+v) got error: %v, want nil", layer, pkgJSON, err)
+	}
+
+	fp := filepath.Join(layer.Path, "bin/pnpm")
+	if _, err := os.Stat(fp); err != nil {
+		t.Errorf("os.Stat(%q) got error: %v, want nil", fp, err)
+	}
+
+	content, err := os.ReadFile(fp)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) got error: %v", fp, err)
+	}
+	if string(content) != "pnpm!" {
+		t.Errorf("expected native binary in %s, got: %s", fp, string(content))
+	}
 }
 
 func mockTarballBytes(t *testing.T) []byte {
 	t.Helper()
+	return mockTarballWithFiles(t, map[string]string{
+		"pnpm":          "pnpm!",
+		"dist/pnpm.mjs": "// pnpm.mjs",
+	})
+}
+
+func mockTarballWithFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
-	hdr := &tar.Header{
-		Name: "pnpm",
-		Mode: 0755,
-		Size: int64(len("pnpm!")),
-	}
-	if err := tw.WriteHeader(hdr); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write([]byte("pnpm!")); err != nil {
-		t.Fatal(err)
+	for name, body := range files {
+		hdr := &tar.Header{
+			Name: name,
+			Mode: 0755,
+			Size: int64(len(body)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	tw.Close()
 	gw.Close()

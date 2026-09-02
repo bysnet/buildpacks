@@ -27,15 +27,21 @@ var (
 	PNPMLock = "pnpm-lock.yaml"
 	// pnpmDownloadURL is the template used to generate a pnpm download URL.
 	pnpmDownloadURL = "https://github.com/pnpm/pnpm/releases/download/v%s/pnpm-linux-x64"
-	// pnpmVersionKey is the metadata key used to store the pnpm version in the pnpn layer.
+	// pnpmVersionKey is the metadata key used to store the pnpm version in the pnpm layer.
 	pnpmVersionKey = "version"
-	// pnpmV11Constraint is the semver constraint for pnpm versions >= 11.0.0.
+	// pnpmTarballConstraint is the semver constraint for pnpm versions distributed as tarballs (>= 11.0.0).
+	pnpmTarballConstraint *semver.Constraints
+	// pnpmV11Constraint is the semver constraint for pnpm v11 (>= 11.0.0, < 12.0.0).
 	pnpmV11Constraint *semver.Constraints
 )
 
 func init() {
 	var err error
-	pnpmV11Constraint, err = semver.NewConstraint(">= 11.0.0")
+	pnpmTarballConstraint, err = semver.NewConstraint(">= 11.0.0")
+	if err != nil {
+		panic(fmt.Sprintf("parsing hardcoded pnpm tarball constraint: %v", err))
+	}
+	pnpmV11Constraint, err = semver.NewConstraint(">= 11.0.0, < 12.0.0")
 	if err != nil {
 		panic(fmt.Sprintf("parsing hardcoded pnpm v11 constraint: %v", err))
 	}
@@ -109,7 +115,7 @@ func downloadPNPM(ctx *gcp.Context, dir, version string) error {
 
 	// Starting from v11, pnpm is distributed as a .tar.gz archive containing the executable,
 	// rather than a naked binary. We check the version to determine the appropriate download format.
-	if pnpmV11Constraint.Check(v) {
+	if pnpmTarballConstraint.Check(v) {
 		ctx.Logf("pnpm v%s detected (>= 11.0.0), downloading tarball.", version)
 		tarURL := url + ".tar.gz"
 		// pnpm v11+ tarballs are flat and contain the "pnpm" executable at the root.
@@ -124,10 +130,19 @@ func downloadPNPM(ctx *gcp.Context, dir, version string) error {
 			return gcp.InternalErrorf("expected extracted file %s not found after tarball extraction", fp)
 		}
 
-		// Replace native compiled binary with pure JS shell wrapper to avoid runtime dynamic linker (libatomic) dependencies on minimal run images.
-		wrapperContent := "#!/usr/bin/env bash\nexec node \"$(dirname \"$0\")/dist/pnpm.mjs\" \"$@\"\n"
-		if err := os.WriteFile(fp, []byte(wrapperContent), 0777); err != nil {
-			return gcp.InternalErrorf("writing pnpm shell wrapper: %w", err)
+		// In pnpm v11, the native compiled binary had a runtime dynamic linker (libatomic)
+		// dependency on minimal run images. Replace it with a pure JS shell wrapper targeting
+		// dist/pnpm.mjs. Starting from pnpm v12, pnpm is a native binary rewritten in Rust without
+		// this dependency, and does not provide dist/pnpm.mjs.
+		if pnpmV11Constraint.Check(v) {
+			wrapperTarget := filepath.Join(dir, "dist", "pnpm.mjs")
+			if _, statErr := os.Stat(wrapperTarget); os.IsNotExist(statErr) {
+				return gcp.InternalErrorf("expected wrapper target %s not found for pnpm v11", wrapperTarget)
+			}
+			wrapperContent := "#!/usr/bin/env bash\nexec node \"$(dirname \"$0\")/dist/pnpm.mjs\" \"$@\"\n"
+			if err := os.WriteFile(fp, []byte(wrapperContent), 0777); err != nil {
+				return gcp.InternalErrorf("writing pnpm shell wrapper: %w", err)
+			}
 		}
 		return nil
 	}
