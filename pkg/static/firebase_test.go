@@ -894,3 +894,183 @@ func TestTranslateRewrites(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteFirebaseNginxConfig_CleanUrlsAndTrailingSlash(t *testing.T) {
+	ptrBool := func(b bool) *bool { return &b }
+
+	tests := []struct {
+		name           string
+		cleanUrls      bool
+		trailingSlash  *bool
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name:      "clean urls enabled",
+			cleanUrls: true,
+			wantContains: []string{
+				"try_files $uri $uri.html $uri/ =404;",
+				"if ($request_uri ~ ^/(.*)\\.html(\\?|$)) {",
+				"return 301 /$1$is_args$args;",
+			},
+			wantNotContain: []string{
+				"try_files $uri $uri/ =404;",
+				"try_files $uri $uri.html $uri/ /index.html;",
+				"rewrite",
+			},
+		},
+		{
+			name:          "trailing slash true",
+			trailingSlash: ptrBool(true),
+			wantContains: []string{
+				"rewrite ^([^.\\?]*[^/])$ $1/ permanent;",
+				"try_files $uri $uri/ =404;",
+			},
+			wantNotContain: []string{
+				"if (!-d $request_filename)",
+				"try_files $uri $uri/ /index.html;",
+			},
+		},
+		{
+			name:          "trailing slash false",
+			trailingSlash: ptrBool(false),
+			wantContains: []string{
+				"rewrite ^([^.\\?]*)/$ $1 permanent;",
+				"try_files $uri $uri/index.html =404;",
+			},
+			wantNotContain: []string{
+				"rewrite ^([^.\\?]*[^/])$ $1/ permanent;",
+				"if (!-d $request_filename)",
+				"try_files $uri $uri/index.html /index.html;",
+			},
+		},
+		{
+			name:          "both enabled",
+			cleanUrls:     true,
+			trailingSlash: ptrBool(true),
+			wantContains: []string{
+				"rewrite ^([^.\\?]*[^/])$ $1/ permanent;",
+				"try_files $uri $uri.html $uri/ =404;",
+				"if ($request_uri ~ ^/(.*)\\.html(\\?|$)) {",
+				"return 301 /$1$is_args$args;",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			dstPath := filepath.Join(tmpDir, NginxConfFile)
+
+			params := FirebaseNginxConfigParams{
+				RootPath:      "/my/app/root",
+				MimeTypesPath: "/opt/nginx/conf/mime.types",
+				HostingConfig: &HostingConfig{
+					CleanUrls:     tc.cleanUrls,
+					TrailingSlash: tc.trailingSlash,
+				},
+			}
+
+			if err := WriteFirebaseNginxConfig(dstPath, params); err != nil {
+				t.Fatalf("WriteFirebaseNginxConfig() error = %v", err)
+			}
+
+			content, err := os.ReadFile(dstPath)
+			if err != nil {
+				t.Fatalf("os.ReadFile(%q) error = %v", dstPath, err)
+			}
+
+			got := string(content)
+			for _, want := range tc.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("tc %q output missing %q, got:\n%s", tc.name, want, got)
+				}
+			}
+			for _, avoid := range tc.wantNotContain {
+				if strings.Contains(got, avoid) {
+					t.Errorf("tc %q output should not contain %q, got:\n%s", tc.name, avoid, got)
+				}
+			}
+		})
+	}
+}
+
+func TestWriteFirebaseNginxConfig_SPAAnd404(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a dummy 404.html to trigger Has404HTML
+	err := os.WriteFile(filepath.Join(tmpDir, "404.html"), []byte("Not Found"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create dummy 404.html: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		rewrites       []Rewrite
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name: "SPA rewrite enabled",
+			rewrites: []Rewrite{
+				{Source: "**", Destination: "/index.html"},
+			},
+			wantContains: []string{
+				"error_page 404 /404.html;",         // Should still have it if 404.html exists
+				"try_files $uri $uri/ /index.html;", // Fallback to index.html
+			},
+			wantNotContain: []string{
+				"try_files $uri $uri/ =404;",
+				"rewrite ^",
+			},
+		},
+		{
+			name: "No SPA rewrite (static)",
+			rewrites: []Rewrite{
+				{Source: "/api/**", Destination: "/api/index.html"}, // Not global
+			},
+			wantContains: []string{
+				"error_page 404 /404.html;",
+				"try_files $uri $uri/ =404;", // Fallback to 404
+			},
+			wantNotContain: []string{
+				"try_files $uri $uri/ /index.html;",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dstPath := filepath.Join(tmpDir, tc.name+"_"+NginxConfFile)
+
+			params := FirebaseNginxConfigParams{
+				RootPath:      tmpDir,
+				MimeTypesPath: "/opt/nginx/conf/mime.types",
+				HostingConfig: &HostingConfig{
+					Rewrites: tc.rewrites,
+				},
+			}
+
+			if err := WriteFirebaseNginxConfig(dstPath, params); err != nil {
+				t.Fatalf("WriteFirebaseNginxConfig() error = %v", err)
+			}
+
+			content, err := os.ReadFile(dstPath)
+			if err != nil {
+				t.Fatalf("os.ReadFile(%q) error = %v", dstPath, err)
+			}
+
+			got := string(content)
+			for _, want := range tc.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("tc %q output missing %q, got:\n%s", tc.name, want, got)
+				}
+			}
+			for _, avoid := range tc.wantNotContain {
+				if strings.Contains(got, avoid) {
+					t.Errorf("tc %q output should not contain %q, got:\n%s", tc.name, avoid, got)
+				}
+			}
+		})
+	}
+}

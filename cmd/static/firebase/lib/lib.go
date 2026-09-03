@@ -113,35 +113,10 @@ func generateNginxConfig(ctx *gcp.Context, layerPath string, rootPath string, fb
 	}
 	nginxMimeTypesPath := filepath.Join(nginxPath, "conf/mime.types")
 
-	var (
-		maps      []static.FirebaseNginxMap
-		headers   []static.FirebaseNginxHeader
-		redirects []static.NginxRedirect
-		rewrites  []static.NginxRewrite
-		err       error
-	)
-	if fbConfig != nil {
-		maps, headers, err = static.PrepareNginxHeaders(fbConfig)
-		if err != nil {
-			return "", "", fmt.Errorf("preparing nginx headers from firebase.json: %w", err)
-		}
-		redirects, err = static.TranslateRedirects(fbConfig.Redirects)
-		if err != nil {
-			return "", "", fmt.Errorf("translating redirects from firebase.json: %w", err)
-		}
-		rewrites, err = static.TranslateRewrites(fbConfig.Rewrites)
-		if err != nil {
-			return "", "", fmt.Errorf("translating rewrites from firebase.json: %w", err)
-		}
-	}
-
 	params := static.FirebaseNginxConfigParams{
 		RootPath:      rootPath,
 		MimeTypesPath: nginxMimeTypesPath,
-		Maps:          maps,
-		Headers:       headers,
-		Redirects:     redirects,
-		Rewrites:      rewrites,
+		HostingConfig: fbConfig,
 	}
 	if err := static.WriteFirebaseNginxConfig(nginxConfPath, params); err != nil {
 		return "", "", fmt.Errorf("writing %s: %w", static.NginxConfFile, err)

@@ -128,6 +128,20 @@ func TestBuild(t *testing.T) {
 			want: "Generating default SPA/SSG-friendly nginx.conf for firebase.json",
 		},
 		{
+			name: "with_firebase_json_clean_urls_and_trailing_slash",
+			files: map[string]string{
+				"index.html": "hello",
+				"firebase.json": `{
+					"hosting": {
+						"cleanUrls": true,
+						"trailingSlash": false
+					}
+				}`,
+			},
+			envs: []string{"X_GOOGLE_RELEASE_TRACK=ALPHA"},
+			want: "Generating default SPA/SSG-friendly nginx.conf for firebase.json",
+		},
+		{
 			name: "with_invalid_firebase_json",
 			files: map[string]string{
 				"index.html":    "hello",

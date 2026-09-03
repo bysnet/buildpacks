@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -44,14 +45,20 @@ type FirebaseNginxHeader struct {
 	VariableName string
 }
 
-// FirebaseNginxConfigParams holds the runtime configuration parameters for templating nginx.conf in the Firebase buildpack.
+// FirebaseNginxConfigParams holds the runtime configuration parameters for templating firebase nginx.conf.
 type FirebaseNginxConfigParams struct {
-	RootPath      string
-	MimeTypesPath string
-	Maps          []FirebaseNginxMap
-	Headers       []FirebaseNginxHeader
-	Redirects     []NginxRedirect
-	Rewrites      []NginxRewrite
+	RootPath         string
+	MimeTypesPath    string
+	HostingConfig    *HostingConfig
+	Maps             []FirebaseNginxMap
+	Headers          []FirebaseNginxHeader
+	Redirects        []NginxRedirect
+	Rewrites         []NginxRewrite
+	CleanUrls        bool
+	HasTrailingSlash bool
+	TrailingSlash    bool
+	Has404HTML       bool
+	IsSPA            bool
 }
 
 const firebaseNginxConfTmpl = `
@@ -87,6 +94,10 @@ http {
         listen 8080;
         root {{.RootPath}};
         index index.html;
+
+        {{if .Has404HTML}}
+        error_page 404 /404.html;
+        {{end}}
 {{range .Headers}}
         add_header {{.Key}} ${{.VariableName}} always;{{end}}
 
@@ -102,9 +113,40 @@ http {
         }
         {{end}}
 
+        {{if .CleanUrls}}
+        # Clean URLs: redirect .html to clean URL
+        if ($request_uri ~ ^/(.*)\.html(\?|$)) {
+            return 301 /$1$is_args$args;
+        }
+        {{end}}
+
+        {{if .HasTrailingSlash}}
+        {{if .TrailingSlash}}
+        # Enforce trailing slash
+        rewrite ^([^.\?]*[^/])$ $1/ permanent;
+        {{else}}
+        # Remove trailing slash
+        # We don't use if (!-d) because we want to redirect directories that have index.html.
+        # We avoid loops by removing $uri/ from try_files (see below).
+        rewrite ^([^.\?]*)/$ $1 permanent;
+        {{end}}
+        {{end}}
+
         # Default Fallback
         location / {
-            try_files $uri $uri/ /index.html;
+            {{if .CleanUrls}}
+            {{if and .HasTrailingSlash (not .TrailingSlash)}}
+            try_files $uri $uri.html $uri/index.html {{if .IsSPA}}/index.html{{else}}=404{{end}};
+            {{else}}
+            try_files $uri $uri.html $uri/ {{if .IsSPA}}/index.html{{else}}=404{{end}};
+            {{end}}
+            {{else}}
+            {{if and .HasTrailingSlash (not .TrailingSlash)}}
+            try_files $uri $uri/index.html {{if .IsSPA}}/index.html{{else}}=404{{end}};
+            {{else}}
+            try_files $uri $uri/ {{if .IsSPA}}/index.html{{else}}=404{{end}};
+            {{end}}
+            {{end}}
         }
 
         absolute_redirect off;
@@ -112,8 +154,65 @@ http {
 }
 `
 
+// isGlobalSPA checks if there is a rewrite that redirects everything to index.html.
+func isGlobalSPA(r Rewrite) bool {
+	if r.Destination == "/index.html" || r.Destination == "index.html" {
+		if r.Source == "**" || r.Source == "/**" ||
+			r.Regex == "^/.*$" || r.Regex == "^.*$" || r.Regex == ".*" {
+			return true
+		}
+	}
+	return false
+}
+
 // WriteFirebaseNginxConfig compiles the Firebase Nginx configuration template with parameters and writes it to disk.
 func WriteFirebaseNginxConfig(dstPath string, params FirebaseNginxConfigParams) error {
+	if params.RootPath != "" {
+		path404 := filepath.Join(params.RootPath, "404.html")
+		if _, err := os.Stat(path404); err == nil {
+			params.Has404HTML = true
+		}
+	}
+
+	if params.HostingConfig != nil {
+		if len(params.Maps) == 0 && len(params.Headers) == 0 {
+			maps, headers, err := PrepareNginxHeaders(params.HostingConfig)
+			if err != nil {
+				return fmt.Errorf("preparing nginx headers: %w", err)
+			}
+			params.Maps = maps
+			params.Headers = headers
+		}
+		if len(params.Redirects) == 0 {
+			redirects, err := TranslateRedirects(params.HostingConfig.Redirects)
+			if err != nil {
+				return fmt.Errorf("translating redirects: %w", err)
+			}
+			params.Redirects = redirects
+		}
+		var nonSPARewrites []Rewrite
+		for _, r := range params.HostingConfig.Rewrites {
+			if isGlobalSPA(r) {
+				params.IsSPA = true
+			} else {
+				nonSPARewrites = append(nonSPARewrites, r)
+			}
+		}
+		if len(params.Rewrites) == 0 {
+			rewrites, err := TranslateRewrites(nonSPARewrites)
+			if err != nil {
+				return fmt.Errorf("translating rewrites: %w", err)
+			}
+			params.Rewrites = rewrites
+		}
+
+		params.CleanUrls = params.HostingConfig.CleanUrls
+		if params.HostingConfig.TrailingSlash != nil {
+			params.HasTrailingSlash = true
+			params.TrailingSlash = *params.HostingConfig.TrailingSlash
+		}
+	}
+
 	tmpl, err := template.New(NginxConfFile).Parse(firebaseNginxConfTmpl)
 	if err != nil {
 		return err
