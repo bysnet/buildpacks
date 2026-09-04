@@ -102,9 +102,17 @@ type pipInstaller interface {
 	Install(ctx *gcp.Context, l *libcnb.Layer, reqs ...string) error
 }
 
+// Command returns "python" on Windows and "python3" on other operating systems.
+func Command() string {
+	if stdruntime.GOOS == "windows" {
+		return "python"
+	}
+	return "python3"
+}
+
 // Version returns the installed version of Python.
 func Version(ctx *gcp.Context) (string, error) {
-	result, err := ctx.Exec([]string{"python3", "--version"})
+	result, err := ctx.Exec([]string{Command(), "--version"})
 	if err != nil {
 		return "", err
 	}
@@ -346,8 +354,8 @@ func PipTargetDir() string {
 func (i MakerPipInstaller) Install(ctx *gcp.Context, l *libcnb.Layer, reqs ...string) error {
 	return installDependenciesToTarget(ctx, l, reqs, "pip", i.TargetPlatform, func(req string) []string {
 		cmd := basePipInstallArgs(req)
-		if stdruntime.GOOS == "windows" && len(cmd) > 0 && cmd[0] == "python3" {
-			cmd[0] = "python"
+		if len(cmd) > 0 {
+			cmd[0] = Command()
 		}
 		return appendVendoringFlags(cmd)
 	})
@@ -685,8 +693,13 @@ type MakerUVDependencyInstaller struct {
 // unlike the standard buildpack which installs into a virtual environment.
 func (i MakerUVDependencyInstaller) Install(ctx *gcp.Context, l *libcnb.Layer, reqs ...string) error {
 	return installDependenciesToTarget(ctx, l, reqs, "uv", i.TargetPlatform, func(req string) []string {
-		return baseuvPipInstallArgs(req)
+		return makerUVPipInstallArgs(req)
 	})
+}
+
+func makerUVPipInstallArgs(req string) []string {
+	cmd := baseuvPipInstallArgs(req)
+	return append(cmd, "--python", Command())
 }
 
 func baseuvPipInstallArgs(req string) []string {

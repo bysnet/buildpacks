@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	stdruntime "runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -684,6 +685,45 @@ func TestAdaptEntrypoint_Windows(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("AdaptEntrypoint(%v) returned diff (-want +got):\n%s", tc.cmd, diff)
+			}
+		})
+	}
+}
+
+func TestCommand(t *testing.T) {
+	got := Command()
+	want := "python3"
+	if stdruntime.GOOS == "windows" {
+		want = "python"
+	}
+	if got != want {
+		t.Errorf("Command() = %q, want %q", got, want)
+	}
+}
+
+func TestMakerUVPipInstallArgs(t *testing.T) {
+	testCases := []struct {
+		name string
+		req  string
+		want []string
+	}{
+		{
+			name: "install_from_current_directory",
+			req:  ".",
+			want: []string{"uv", "pip", "install", ".", "--reinstall", "--link-mode=copy", "--python", Command()},
+		},
+		{
+			name: "install_from_requirements_txt",
+			req:  "requirements.txt",
+			want: []string{"uv", "pip", "install", "-r", "requirements.txt", "--reinstall", "--link-mode=copy", "--python", Command()},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := makerUVPipInstallArgs(tc.req)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("makerUVPipInstallArgs(%q) returned diff (-want +got):\n%s", tc.req, diff)
 			}
 		})
 	}
