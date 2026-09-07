@@ -176,6 +176,9 @@ const (
 	// FasterTarballExtraction is an experiment flag to enable faster tarball extraction.
 	FasterTarballExtraction = "X_GOOGLE_USE_ZSTD_FOR_EXTRACTION"
 
+	// CRRemoteLayerReuse is an experiment flag to enable remote OCI layer reuse across builds on Cloud Run.
+	CRRemoteLayerReuse = "X_GOOGLE_REMOTE_LAYER_REUSE"
+
 	// NodeCompileCache is an env var used to enable bytecode caching for Node.js applications.
 	NodeCompileCache = "NODE_COMPILE_CACHE"
 
