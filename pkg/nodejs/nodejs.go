@@ -50,8 +50,10 @@ const (
 	// NPMStartEntrypointCapability is the capability key for the NPMStartEntrypoint.
 	NPMStartEntrypointCapability = "nodejs.NPMStartEntrypoint"
 
-	nodeVersionKey    = "node_version"
-	dependencyHashKey = "dependency_hash"
+	nodeVersionKey = "node_version"
+
+	// DependencyHashKey is the metadata key for package dependency hashes.
+	DependencyHashKey = "dependency_hash"
 )
 
 const (
@@ -391,7 +393,7 @@ func CheckOrClearCache(ctx *gcp.Context, l *libcnb.Layer, opts ...cache.Option) 
 		return false, err
 	}
 	opts = append(opts, cache.WithStrings(currentNodeVersion))
-	hash, cached, err := cache.HashAndCheck(ctx, l, dependencyHashKey, opts...)
+	hash, cached, err := cache.HashAndCheck(ctx, l, DependencyHashKey, opts...)
 	if err != nil {
 		return false, err
 	}
@@ -405,7 +407,7 @@ func CheckOrClearCache(ctx *gcp.Context, l *libcnb.Layer, opts ...cache.Option) 
 	}
 
 	// Update the layer metadata.
-	cache.Add(ctx, l, dependencyHashKey, hash)
+	cache.Add(ctx, l, DependencyHashKey, hash)
 	ctx.SetMetadata(l, nodeVersionKey, currentNodeVersion)
 
 	return false, nil

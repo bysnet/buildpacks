@@ -191,6 +191,10 @@ NOTE: Running the default build script can be skipped by passing the empty envir
 	el.SharedEnvironment.Prepend("PATH", string(os.PathListSeparator), filepath.Join(ctx.ApplicationRoot(), "node_modules", ".bin"))
 	el.SharedEnvironment.Default("NODE_ENV", nodejs.NodeEnv())
 
+	if depHash := ctx.GetMetadata(ml, nodejs.DependencyHashKey); depHash != "" {
+		ctx.SetMetadata(el, nodejs.DependencyHashKey, depHash)
+	}
+
 	// Configure the entrypoint for production.
 	cmd, err := nodejs.DefaultStartCommand(ctx, pjs)
 	if err != nil {
